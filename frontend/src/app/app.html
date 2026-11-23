@@ -1,0 +1,76 @@
+<main class="shell">
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Frontdesk home"><span class="brand-mark">F</span><span>frontdesk<span class="brand-dot">.</span></span></a>
+    <div class="team-label"><span class="live-dot"></span> ARVO SYSTEMS <span class="team-divider">/</span> SUPPORT</div>
+    <div class="top-actions">
+      <label class="user-select"><span>{{ mode() === 'AGENT' ? 'AGENT' : 'CUSTOMER' }}</span>
+        <select [value]="mode() === 'AGENT' ? agentId() : customerId()" (change)="selectUser($any($event.target).value)">
+          @for (user of mode() === 'AGENT' ? agents() : customers(); track user.id) { <option [value]="user.id">{{ user.name }}</option> }
+        </select>
+      </label>
+      <div class="mode-switch" aria-label="Workspace mode">
+        <button type="button" [class.active]="mode() === 'AGENT'" (click)="setMode('AGENT')">Agent Workspace</button>
+        <button type="button" [class.active]="mode() === 'CUSTOMER'" (click)="setMode('CUSTOMER')">Customer Portal Simulator</button>
+      </div>
+    </div>
+  </header>
+
+  @if (errorMessage()) { <div class="alert" role="alert"><span>{{ errorMessage() }}</span><button type="button" aria-label="Dismiss alert" (click)="errorMessage.set('')">×</button></div> }
+
+  <section class="workspace" [class.customer-mode]="mode() === 'CUSTOMER'">
+    <aside class="queue-pane">
+      <div class="queue-heading"><div><div class="eyebrow">{{ mode() === 'AGENT' ? 'LIVE OPERATIONS' : 'YOUR REQUESTS' }}</div><h1>{{ mode() === 'AGENT' ? 'Ticket queue' : 'Support tickets' }}</h1></div><span class="queue-count">{{ visibleTickets().length | number: '2.0-0' }}</span></div>
+      <nav class="filter-tabs" aria-label="Filter tickets">
+        @for (item of filters; track item.key) { <button type="button" [class.active]="filter() === item.key" (click)="filter.set(item.key)">{{ item.label }}</button> }
+      </nav>
+      <div class="ticket-list">
+        @for (ticket of visibleTickets(); track ticket.id) {
+          <button type="button" class="ticket-card" [class.selected]="selectedId() === ticket.id" (click)="openTicket(ticket.id)">
+            <div class="ticket-card-top"><span class="ticket-id">FD-{{ ticket.id }}</span><span class="priority" [class]="'priority ' + ticket.priority.toLowerCase()">{{ ticket.priority }}</span></div>
+            <h2>{{ ticket.subject }}</h2>
+            <div class="ticket-meta"><span>{{ mode() === 'AGENT' ? (ticket.assignee_name || 'Unassigned') : ticket.status.replaceAll('_', ' ') }}</span>@if (mode() === 'AGENT') { <span class="meta-separator">·</span><span>{{ ticket.customer_name }}</span> }</div>
+            <div class="sla-badge" [class.late]="ticket.sla.isLate" [class.paused]="ticket.sla.isPaused" [class.done]="ticket.status === 'DONE' || ticket.status === 'CLOSED'"><span class="sla-dot"></span>{{ slaLabel(ticket) }}</div>
+          </button>
+        } @empty { <div class="empty-queue"><span class="empty-icon">○</span><strong>No tickets here</strong><span>Try another queue filter.</span></div> }
+      </div>
+      <div class="queue-foot"><span class="live-dot"></span> SLA clock · 09:30–18:30 UTC</div>
+    </aside>
+
+    <section class="detail-pane">
+      @if (selectedTicket(); as ticket) {
+        <div class="detail-scroll">
+          <div class="detail-header"><div class="breadcrumbs"><span>QUEUE</span><span>/</span><strong>FD-{{ ticket.id }}</strong></div><div class="detail-actions">
+            @if (mode() === 'AGENT' && ticket.assignee_id === null) { <button class="button primary" type="button" [disabled]="busy()" (click)="claim()"><span>＋</span> Take this ticket</button> }
+            @if (mode() === 'AGENT') {
+              <label class="priority-select"><span>PRIORITY</span><select [value]="ticket.priority" (change)="changePriority($any($event.target).value)"><option value="HIGH">High</option><option value="MEDIUM">Medium</option><option value="LOW">Low</option></select></label>
+              @if (ticket.status !== 'DONE' && ticket.status !== 'CLOSED') { <button class="button outline" type="button" (click)="markDone()">Mark done</button> }
+            } @else if (ticket.status === 'DONE') { <button class="button primary" type="button" (click)="reopen()">Reopen ticket</button> }
+          </div></div>
+
+          <div class="ticket-title-block"><div class="title-flags"><span class="priority" [class]="'priority ' + ticket.priority.toLowerCase()">{{ ticket.priority }}</span><span class="status-pill">{{ ticket.status.replaceAll('_', ' ') }}</span></div><h2>{{ ticket.subject }}</h2><p>Opened {{ formatDate(ticket.created_at) }} <span>·</span> {{ mode() === 'AGENT' ? ticket.customer_name : (ticket.assignee_name || 'Support team') }}</p></div>
+
+          <div class="sla-strip" [class.late]="ticket.sla.isLate" [class.paused]="ticket.sla.isPaused"><div class="sla-main"><span class="sla-ring">{{ ticket.sla.isPaused ? 'Ⅱ' : ticket.sla.isLate ? '!' : '↗' }}</span><div><strong>{{ slaLabel(ticket) }}</strong><span>Working-time SLA · {{ ticket.sla.netElapsedWorkingMinutes }} min elapsed</span></div></div><div class="sla-target"><span>FIRST REPLY</span><strong>{{ ticket.sla.firstReplyTargetMinutes }} min</strong></div><div class="sla-target"><span>RESOLUTION</span><strong>{{ ticket.sla.resolveTargetMinutes }} min</strong></div></div>
+
+          <section class="conversation-section"><div class="section-heading"><div><span class="section-kicker">CASE ACTIVITY</span><h3>Conversation &amp; notes</h3></div><span class="activity-count">{{ timeline().length }} entries</span></div><div class="timeline">
+            @for (entry of timeline(); track entry.kind + entry.id) {
+              <article class="timeline-entry" [class.private-note]="entry.kind === 'note'"><div class="avatar" [class.agent-avatar]="entry.kind === 'note' || entry.author_role === 'AGENT'">{{ entry.author_name.slice(0, 1).toUpperCase() }}</div><div class="entry-content"><div class="entry-byline"><strong>{{ entry.author_name }}</strong>@if (entry.kind === 'note') { <span class="private-label">PRIVATE · TEAM ONLY</span> } @else { <span class="role-label">{{ entry.author_role === 'AGENT' ? 'SUPPORT' : 'CUSTOMER' }}</span> }<time>{{ formatDate(entry.created_at) }}</time></div><p>{{ entry.body }}</p></div></article>
+            } @empty { <div class="empty-conversation">No conversation yet. Add the first reply below.</div> }
+          </div></section>
+
+          <section class="composer-grid" [class.customer-composer]="mode() === 'CUSTOMER'">
+            <form class="composer reply-composer" (ngSubmit)="sendReply()"><label class="composer-title" for="reply-body"><span class="composer-icon">↗</span><span>{{ mode() === 'AGENT' ? 'Reply to customer' : 'Reply to support' }}</span></label><textarea id="reply-body" rows="3" [ngModel]="replyBody()" (ngModelChange)="replyBody.set($event)" name="replyBody" placeholder="Write a clear, helpful response…" required></textarea><div class="composer-footer">
+              @if (mode() === 'AGENT') { <label class="check-label"><input type="checkbox" [ngModel]="waitForCustomer()" (ngModelChange)="waitForCustomer.set($event)" name="waitForCustomer"><span>Wait for customer reply — pauses SLA timer</span></label> }
+              <button class="button primary send-button" type="submit" [disabled]="!replyBody().trim()">Send reply <span>↗</span></button>
+            </div></form>
+            @if (mode() === 'AGENT') { <form class="composer note-composer" (ngSubmit)="addNote()"><label class="composer-title" for="note-body"><span class="lock-icon">▣</span><span>Add team-only internal note</span><span class="private-label">PRIVATE</span></label><textarea id="note-body" rows="3" [ngModel]="noteBody()" (ngModelChange)="noteBody.set($event)" name="noteBody" placeholder="Private context for the support team…" required></textarea><div class="composer-footer"><span class="private-hint">Never visible to the customer</span><button class="button note-button" type="submit" [disabled]="!noteBody().trim()">Add note <span>＋</span></button></div></form> }
+          </section>
+
+          @if (mode() === 'AGENT') { <section class="audit-section"><div class="section-heading"><div><span class="section-kicker">SYSTEM RECORD</span><h3>Immutable audit history</h3></div><span class="activity-count">{{ ticket.auditLogs?.length ?? 0 }} events</span></div><div class="audit-list">
+            @for (event of ticket.auditLogs ?? []; track event.id) { <div class="audit-row"><time>{{ formatDate(event.created_at) }}</time><strong>{{ event.actor_label }}</strong><span class="audit-action">{{ event.action.replaceAll('_', ' ') }}</span><span class="audit-details">{{ event.details | json }}</span></div> }
+            @empty { <div class="audit-empty">No recorded changes yet.</div> }
+          </div></section> }
+        </div>
+      } @else { <div class="detail-empty"><div class="empty-art">FD<span>.</span></div><h2>Select a ticket</h2><p>Choose a request from the queue to view its conversation and details.</p></div> }
+    </section>
+  </section>
+</main>
